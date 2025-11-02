@@ -1,0 +1,979 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quiz de ECG Aleatório</title>
+    <!-- Carrega o Tailwind CSS --><script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Estilo customizado para o papel milimetrado do ECG */
+        .ecg-paper {
+            background-color: #fefdf9; /* Cor de papel levemente amarelado */
+            /* Linhas pequenas (1mm ou 5px) - cor cinza claro */
+            background-image: linear-gradient(to right, #eeeeee 1px, transparent 1px),
+                              linear-gradient(to bottom, #eeeeee 1px, transparent 1px),
+            /* Linhas grandes (5mm ou 25px) - cor vermelho forte */
+                              linear-gradient(to right, #d10000 1px, transparent 1px),
+                              linear-gradient(to bottom, #d10000 1px, transparent 1px);
+            background-size: 5px 5px, 
+                             5px 5px, 
+                             25px 25px, 
+                             25px 25px;
+            background-position: -1px -1px, -1px -1px, -1px -1px, -1px -1px;
+            border: 1px solid #e0e0e0;
+        }
+
+        /* Estilo para a "tinta" do ECG */
+        canvas {
+            width: 100%;
+            height: 100%;
+        }
+
+        /* --- NOVOS ESTILOS DO QUIZ --- */
+        .quiz-question { 
+            font-size: 1.125rem; /* text-lg */
+            font-weight: 600; /* font-semibold */
+            margin-bottom: 1rem; /* mb-4 */
+            color: #1f2937; /* text-gray-800 */
+        }
+        
+        .quiz-option-btn {
+            padding: 0.75rem 1rem; /* px-4 py-3 */
+            border: 1px solid #d1d5db; /* border-gray-300 */
+            border-radius: 0.5rem; /* rounded-lg */
+            background-color: #ffffff; /* bg-white */
+            font-weight: 500; /* font-medium */
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s ease-in-out;
+        }
+        .quiz-option-btn:hover:not(:disabled) {
+            background-color: #f9fafb; /* hover:bg-gray-50 */
+            border-color: #6b7280; /* hover:border-gray-500 */
+        }
+        .quiz-option-btn:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+
+        /* Estados de feedback */
+        .quiz-option-btn.correct {
+            background-color: #16a34a; /* bg-green-600 */
+            border-color: #16a34a;
+            color: white;
+        }
+        .quiz-option-btn.incorrect {
+            background-color: #dc2626; /* bg-red-600 */
+            border-color: #dc2626;
+            color: white;
+        }
+        .quiz-option-btn.selected:not(.correct):not(.incorrect) {
+            border-color: #2563eb; /* border-blue-600 */
+            box-shadow: 0 0 0 2px #bfdbfe; /* ring-2 ring-blue-200 */
+        }
+
+        /* Painel de Feedback (respostas, dicas) */
+        .feedback-panel { 
+            margin-top: 1rem; /* mt-4 */
+            padding: 0.75rem; /* p-3 */
+            border-radius: 0.5rem; /* rounded-lg */
+            border-width: 1px;
+        }
+        .feedback-correct { 
+            background-color: #f0fdf4; /* bg-green-50 */
+            border-color: #16a34a; /* border-green-600 */
+            color: #15803d; /* text-green-800 */
+        }
+        .feedback-incorrect { 
+            background-color: #fef2f2; /* bg-red-50 */
+            border-color: #dc2626; /* border-red-600 */
+            color: #b91c1c; /* text-red-800 */
+        }
+        .feedback-hint {
+            background-color: #eff6ff; /* bg-blue-50 */
+            border-color: #2563eb; /* border-blue-600 */
+            color: #1e40af; /* text-blue-800 */
+        }
+        .analysis-reveal { 
+            margin-top: 1rem; 
+            padding-top: 1rem; 
+            border-top: 1px dashed #d1d5db; /* border-t border-dashed border-gray-300 */
+        }
+        
+        /* Botão Próximo */
+        .next-step-btn {
+            background-color: #2563eb; /* bg-blue-600 */
+            color: white;
+            padding: 0.5rem 1.25rem; /* px-5 py-2 */
+            border-radius: 0.5rem; /* rounded-lg */
+            font-weight: 500; /* font-medium */
+            transition: background-color 0.2s;
+        }
+        .next-step-btn:hover {
+            background-color: #1d4ed8; /* hover:bg-blue-700 */
+        }
+        
+        /* Botões de Ação Menores */
+        .hint-btn, .show-answer-btn, .bazett-calc-btn, .bazett-hint-btn {
+            text-sm: 0.875rem;
+            color: #2563eb; /* text-blue-600 */
+            font-weight: 500; /* font-medium */
+            cursor: pointer;
+            background: none;
+            border: none;
+            padding: 0;
+        }
+        .hint-btn:hover, .show-answer-btn:hover, .bazett-calc-btn:hover, .bazett-hint-btn:hover {
+            text-decoration: underline;
+        }
+
+        .bazett-calc-btn {
+             background-color: #3b82f6; /* bg-blue-500 */
+             color: white;
+             padding: 0.5rem 0.75rem; /* px-3 py-2 */
+             border-radius: 0.375rem; /* rounded-md */
+             text-decoration: none;
+        }
+        .bazett-calc-btn:hover {
+            background-color: #2563eb; /* hover:bg-blue-600 */
+        }
+
+        .hidden { 
+            display: none; 
+        }
+
+    </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen p-4 sm:p-8 font-sans">
+
+    <div class="bg-white w-full max-w-7xl p-4 sm:p-8 rounded-xl shadow-2xl">
+        <div class="flex flex-col sm:flex-row justify-between items-center mb-6">
+            <h1 class="text-2xl sm:text-3xl font-bold text-gray-800">Quiz de ECG Aleatório</h1>
+            <button id="generate-btn" class="mt-4 sm:mt-0 bg-blue-600 text-white px-6 py-2 rounded-lg font-semibold shadow-md hover:bg-blue-700 transition duration-300">
+                Gerar Novo ECG e Reiniciar Quiz
+            </button>
+        </div>
+
+        <!-- Informações do Paciente (Fictício) --><div class="border-b border-gray-300 pb-2 mb-4 text-xs sm:text-sm text-gray-700">
+            <div class="flex flex-wrap justify-between gap-2">
+                <span id="patient-info">Paciente: Aleatório, 35a</span>
+                <span id="ecg-speed">Velocidade: 25 mm/s</span>
+                <span id="ecg-volt">Voltagem: 10 mm/mV</span>
+                <!-- O Span da FC foi removido daqui, conforme solicitado -->
+            </div>
+        </div>
+
+        <!-- Container do ECG --><div class="overflow-x-auto p-2 bg-gray-50 rounded-lg">
+            <div id="ecg-paper-container" class="ecg-paper inline-block">
+                <!-- 
+                  Definição do Canvas:
+                  Velocidade: 25 mm/s -> 1s = 25mm.
+                  Voltagem: 10 mm/mV -> 1mV = 10mm.
+                  Escala do CSS: 1mm = 5px.
+                  
+                  Dimensões:
+                  - 1 quadrado pequeno = 5px (0.04s H, 0.1mV V)
+                  - 1 quadrado grande = 25px (0.2s H, 0.5mV V)
+
+                  Segmento Curto (2.5s):
+                  - Largura: 2.5s / 0.04s/quad = 62.5 quadrados pequenos = 62.5 * 5px = 312.5px
+                  
+                  Segmento Longo (10s):
+                  - Largura: 10s / 0.04s/quad = 250 quadrados pequenos = 250 * 5px = 1250px
+                  
+                  Altura (padrão para todos, ex: 3mV total):
+                  - Altura: 3mV / 0.1mV/quad = 30 quadrados pequenos = 30 * 5px = 150px
+                --><div class="grid grid-cols-4" style="width: 1250px;">
+                    
+                    <!-- Função para criar a caixa de derivação --><script>
+                        function createLeadBox(id, label, width, height, colSpan = 1) {
+                            return `
+                                <div class="relative border border-dashed border-gray-300/50" style="height: ${height}px; grid-column: span ${colSpan} / span ${colSpan};">
+                                    <canvas id="${id}" width="${width}" height="${height}"></canvas>
+                                    <span class="absolute top-1 left-2 text-sm sm:text-base font-bold text-black">${label}</span>
+                                </div>
+                            `;
+                        }
+                        
+                        const leadWidth = 312.5; // 2.5s
+                        const leadHeight = 150;   // 3mV
+                        const longLeadWidth = 1250; // 10s
+
+                        // Linha 1
+                        document.write(createLeadBox('lead-i', 'I', leadWidth, leadHeight));
+                        document.write(createLeadBox('lead-avr', 'aVR', leadWidth, leadHeight));
+                        document.write(createLeadBox('lead-v1', 'V1', leadWidth, leadHeight));
+                        document.write(createLeadBox('lead-v4', 'V4', leadWidth, leadHeight));
+
+                        // Linha 2
+                        document.write(createLeadBox('lead-ii', 'II', leadWidth, leadHeight));
+                        document.write(createLeadBox('lead-avl', 'aVL', leadWidth, leadHeight));
+                        document.write(createLeadBox('lead-v2', 'V2', leadWidth, leadHeight));
+                        document.write(createLeadBox('lead-v5', 'V5', leadWidth, leadHeight));
+
+                        // Linha 3
+                        document.write(createLeadBox('lead-iii', 'III', leadWidth, leadHeight));
+                        document.write(createLeadBox('lead-avf', 'aVF', leadWidth, leadHeight));
+                        document.write(createLeadBox('lead-v3', 'V3', leadWidth, leadHeight));
+                        document.write(createLeadBox('lead-v6', 'V6', leadWidth, leadHeight));
+                        
+                        // Linha 4 (Faixa de Ritmo Longa)
+                        document.write(createLeadBox('lead-ii-long', 'II', longLeadWidth, leadHeight, 4));
+
+                    </script>
+                </div>
+            </div>
+        </div>
+        <!-- ============================================ --><!-- =========== Container do Quiz/Análise =========== --><div class="mt-8 p-4 sm:p-6 bg-gray-100 rounded-xl shadow-inner">
+            <div id="ecg-analysis-output" class="prose prose-sm max-w-none text-gray-700">
+                <!-- O Quiz ou a Análise Final aparecerá aqui --><p>Clique em 'Gerar Novo ECG' para iniciar o quiz.</p>
+            </div>
+        </div>
+        <!-- =============================================== --></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const btn = document.getElementById('generate-btn');
+            const quizContainer = document.getElementById('ecg-analysis-output');
+
+            // --- Variáveis de Estado do Quiz ---
+            let currentEcgData = {};
+            let currentQuizStep = 0;
+            let revealedAnswerCounter = 0; // Para passos 4 e 5
+            let ritmoQuestoesRespondidas = { sinusal: false, regular: false }; // Para passo 2
+
+
+            // --- Definições do ECG e Canvas ---
+            const SAMPLE_RATE = 250; // 250 amostras por segundo
+            const PX_PER_S = 125;    // 25mm/s * 5px/mm = 125px/s
+            const PX_PER_MV = 50;     // 10mm/mV * 5px/mm = 50px/mV
+            const leads = [
+                { id: 'lead-i', label: 'I', duration: 2.5 },
+                { id: 'lead-avr', label: 'aVR', duration: 2.5 },
+                { id: 'lead-v1', label: 'V1', duration: 2.5 },
+                { id: 'lead-v4', label: 'V4', duration: 2.5 },
+                { id: 'lead-ii', label: 'II', duration: 2.5 },
+                { id: 'lead-avl', label: 'aVL', duration: 2.5 },
+                { id: 'lead-v2', label: 'V2', duration: 2.5 },
+                { id: 'lead-v5', label: 'V5', duration: 2.5 },
+                { id: 'lead-iii', label: 'III', duration: 2.5 },
+                { id: 'lead-avf', label: 'aVF', duration: 2.5 },
+                { id: 'lead-v3', label: 'V3', duration: 2.5 },
+                { id: 'lead-v6', label: 'V6', duration: 2.5 },
+                { id: 'lead-ii-long', label: 'II', duration: 10.0 }
+            ];
+
+            // --- Funções de Geração de Onda (sem alterações) ---
+            function rand(min, max) {
+                return Math.random() * (max - min) + min;
+            }
+            function createSinWave(numSamples, amplitude) {
+                const wave = new Array(numSamples).fill(0);
+                for (let i = 0; i < numSamples; i++) {
+                    wave[i] = Math.sin((i / numSamples) * Math.PI) * amplitude;
+                }
+                return wave;
+            }
+            function createQRS(samples, qAmp, rAmp, sAmp) {
+                const wave = new Array(samples).fill(0);
+                const qSamples = Math.floor(samples * 0.2);
+                const rSamples = Math.floor(samples * 0.4);
+                const sSamples = samples - qSamples - rSamples;
+
+                for (let i = 0; i < qSamples; i++) {
+                    wave[i] = (i / qSamples) * qAmp;
+                }
+                for (let i = 0; i < rSamples; i++) {
+                    wave[qSamples + i] = qAmp + (i / rSamples) * (rAmp - qAmp);
+                }
+                for (let i = 0; i < sSamples; i++) {
+                    wave[qSamples + rSamples + i] = rAmp + (i / sSamples) * (sAmp - rAmp);
+                }
+                wave[wave.length - 1] = 0; 
+                return wave;
+            }
+            
+            // Armazena durações fixas para o batimento
+            let beatDurations = {};
+            
+            function generateSingleBeat(modifier, noP = false) {
+                // Usa as durações globais do batimento
+                const { pDur_s, prSeg_s, qrsDur_s, stSeg_s, tDur_s } = beatDurations;
+                
+                const pAmp = noP ? 0 : rand(0.1, 0.2) * modifier.p; 
+                const qAmp = rand(-0.2, -0.05) * modifier.qrs;
+                const rAmp = rand(0.8, 1.5) * modifier.qrs;
+                const sAmp = rand(-0.4, -0.1) * modifier.qrs;
+                const tAmp = rand(0.2, 0.4) * modifier.t;
+                const stOffset = rand(-0.05, 0.05) * modifier.st;
+
+                const pSamples = Math.floor(pDur_s * SAMPLE_RATE);
+                const prSamples = Math.floor(prSeg_s * SAMPLE_RATE);
+                const qrsSamples = Math.floor(qrsDur_s * SAMPLE_RATE);
+                const stSamples = Math.floor(stSeg_s * SAMPLE_RATE);
+                const tSamples = Math.floor(tDur_s * SAMPLE_RATE);
+
+                const pWave = createSinWave(pSamples, pAmp);
+                const prSegment = new Array(prSamples).fill(0);
+                const qrsComplex = createQRS(qrsSamples, qAmp, rAmp, sAmp);
+                const stSegment = new Array(stSamples).fill(stOffset);
+                const tWave = createSinWave(tSamples, tAmp).map(val => val + stOffset); 
+
+                return [
+                    ...pWave,
+                    ...prSegment,
+                    ...qrsComplex,
+                    ...stSegment,
+                    ...tWave
+                ];
+            }
+
+            function generateFullWaveform(duration, heartRate, modifier, isIrregular = false, noP = false) {
+                const totalSamples = Math.floor(duration * SAMPLE_RATE);
+                const fullWaveform = new Array(totalSamples).fill(0);
+                const rrIntervalSamples = Math.floor((60 / heartRate) * SAMPLE_RATE);
+                
+                let beatData;
+                let beatSamples;
+                let tpSamples;
+                let tpSegment;
+                let singleBeatWithTP;
+
+                if (!isIrregular) {
+                    beatData = generateSingleBeat(modifier, noP); // Passa 'noP'
+                    beatSamples = beatData.length;
+                    tpSamples = Math.max(0, rrIntervalSamples - beatSamples);
+                    tpSegment = new Array(tpSamples).fill(0);
+                    for(let i = 0; i < tpSegment.length; i++) {
+                        tpSegment[i] = rand(-0.02, 0.02);
+                    }
+                    singleBeatWithTP = [...beatData, ...tpSegment];
+                }
+                
+                let currentSample = 0;
+                while (currentSample < totalSamples) {
+                    let currentBeat;
+                    if (isIrregular) {
+                        beatData = generateSingleBeat(modifier, true); // FA sempre sem P visível
+                        beatSamples = beatData.length;
+                        const current_rrIntervalSamples = Math.floor(rrIntervalSamples * rand(0.7, 1.5));
+                        tpSamples = Math.max(0, current_rrIntervalSamples - beatSamples);
+                        tpSegment = new Array(tpSamples).fill(0);
+                        for(let i = 0; i < tpSegment.length; i++) {
+                            tpSegment[i] = rand(-0.03, 0.03); 
+                        }
+                        currentBeat = [...beatData, ...tpSegment];
+                    } else {
+                        currentBeat = singleBeatWithTP;
+                    }
+                    const remainingSamples = totalSamples - currentSample;
+                    const chunk = currentBeat.slice(0, remainingSamples);
+                    fullWaveform.splice(currentSample, chunk.length, ...chunk);
+                    currentSample += currentBeat.length;
+                }
+                return fullWaveform;
+            }
+            function drawECG(canvas, waveform_mV) {
+                const ctx = canvas.getContext('2d');
+                const w = canvas.width;
+                const h = canvas.height;
+                const centerY_px = h / 2;
+                ctx.clearRect(0, 0, w, h);
+                ctx.strokeStyle = '#222'; 
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                const samples = waveform_mV.length;
+                for (let i = 0; i < samples; i++) {
+                    const x = (i / samples) * w;
+                    const y = centerY_px - (waveform_mV[i] * PX_PER_MV);
+                    if (i === 0) {
+                        ctx.moveTo(x, y);
+                    } else {
+                        ctx.lineTo(x, y);
+                    }
+                }
+                ctx.stroke();
+            }
+
+            // --- LÓGICA PRINCIPAL DE GERAÇÃO (Atualizada para Quiz) ---
+
+            function generateAllECGs() {
+                
+                const diagnosis = {}; 
+                
+                // --- Gera durações fixas para este ECG ---
+                beatDurations = {
+                    pDur_s: rand(0.08, 0.11),
+                    prSeg_s: rand(0.04, 0.09), // (PR Interval = pDur + prSeg)
+                    qrsDur_s: rand(0.07, 0.11),
+                    stSeg_s: rand(0.08, 0.12),
+                    tDur_s: rand(0.12, 0.20)
+                };
+                // Calcula os valores de intervalo para a análise
+                const prInterval_s = beatDurations.pDur_s + beatDurations.prSeg_s;
+                const qtInterval_s = beatDurations.qrsDur_s + beatDurations.stSeg_s + beatDurations.tDur_s;
+
+                // --- PASSO 1: DETERMINAR FREQUÊNCIA ---
+                let heartRate, fcClassification, fcClassificationText;
+                const fcRoll = Math.random();
+                if (fcRoll < 0.15) { 
+                    heartRate = rand(40, 49);
+                    fcClassification = "bradicardia";
+                    fcClassificationText = "Bradicardia (< 50 bpm)";
+                } else if (fcRoll < 0.30) {
+                    heartRate = rand(101, 140);
+                    fcClassification = "taquicardia";
+                    fcClassificationText = "Taquicardia (> 100 bpm)";
+                } else {
+                    heartRate = rand(55, 95); 
+                    fcClassification = "normal";
+                    fcClassificationText = "Normocardia (50-100 bpm)";
+                }
+                const rrInterval_s = 60 / heartRate;
+                const rrSquares = Math.round(rrInterval_s / 0.04);
+
+                // --- PASSO 2: DETERMINAR RITMO ---
+                let rhythmDescription, rhythmJustification, pWaveDesc, prDesc;
+                let isIrregular = false;
+                let isSinusal = true;
+                let hideP = false;
+                
+                const rhythmRoll = Math.random();
+                if (rhythmRoll < 0.15) { 
+                    diagnosis.rhythm = 'irregular';
+                    isIrregular = true;
+                    isSinusal = false;
+                    hideP = true; // FA
+                    rhythmDescription = "O ritmo é <strong>irregularmente irregular</strong> (intervalos R-R variáveis).";
+                    rhythmJustification = "<strong>Justificativa:</strong> A ausência de ondas P coordenadas e a variação constante do intervalo R-R são características de <strong>Fibrilação Atrial</strong>.";
+                } else if (rhythmRoll < 0.30) {
+                    diagnosis.rhythm = 'nao_sinusal';
+                    isIrregular = false;
+                    isSinusal = false;
+                    hideP = true; // Juncional (P escondida ou retrógrada)
+                    rhythmDescription = "O ritmo é <strong>regular</strong>, mas <strong>não sinusal</strong> (ex: ritmo juncional).";
+                    rhythmJustification = "<strong>Justificativa:</strong> As ondas P estão <strong>ausentes ou invertidas</strong> nas derivações inferiores (DI, DII, aVF), indicando que o marca-passo não é o nó sinusal, mas sim uma estrutura mais baixa, como a junção AV.";
+                } else { 
+                    diagnosis.rhythm = 'normal_sinusal';
+                    isIrregular = false;
+                    isSinusal = true;
+                    hideP = false;
+                    rhythmDescription = "O ritmo é <strong>regular</strong> (intervalos R-R constantes) e <strong>sinusal</strong>.";
+                    rhythmJustification = "<strong>Justificativa:</strong> O ritmo é comandado pelo nó sinusal, como evidenciado por ondas P positivas em DI, DII e aVF, e ondas P negativas em aVR.";
+                }
+
+                // --- GERAÇÃO DOS MODIFICADORES DE ONDA ---
+                const mods = {
+                    'I': { p: rand(0.5, 1), qrs: rand(0.8, 1.2), t: rand(0.7, 1), st: 1 },
+                    'II': { p: rand(0.8, 1.2), qrs: rand(1, 1.5), t: rand(0.8, 1.2), st: 1 },
+                    'III': { p: rand(-0.5, 0.5), qrs: rand(0.5, 1), t: rand(-0.5, 0.8), st: 1 },
+                    'aVR': { p: -rand(0.8, 1), qrs: -rand(0.8, 1.2), t: -rand(0.8, 1), st: 1 },
+                    'aVL': { p: rand(0.2, 0.6), qrs: rand(0.3, 0.7), t: rand(0.2, 0.6), st: 1 },
+                    'aVF': { p: rand(0.6, 1), qrs: rand(0.8, 1.2), t: rand(0.7, 1), st: 1 },
+                    'V1': { p: rand(0.5, 1), qrs: rand(0.4, 0.7) * (Math.random() > 0.5 ? 1 : -1), t: rand(0.3, 0.7), st: 1 },
+                    'V2': { p: rand(0.6, 1), qrs: rand(0.5, 0.8) * (Math.random() > 0.5 ? 1 : -1), t: rand(0.5, 0.8), st: 1 },
+                    'V3': { p: rand(0.7, 1), qrs: rand(0.8, 1.2), t: rand(0.7, 1), st: 1 },
+                    'V4': { p: rand(0.6, 1), qrs: rand(1, 1.5), t: rand(0.8, 1.2), st: 1 },
+                    'V5': { p: rand(0.5, 0.9), qrs: rand(1.2, 1.8), t: rand(0.7, 1), st: 1 },
+                    'V6': { p: rand(0.4, 0.8), qrs: rand(1, 1.5), t: rand(0.6, 0.9), st: 1 }
+                };
+                mods['V1'].qrs = rand(0.7, 1.2); 
+                mods['V1'].p = 0.5; 
+                mods['V2'].qrs = rand(0.8, 1.3);
+                mods['aVR'] = {
+                    p: -Math.abs(mods['I'].p + mods['II'].p) / 2 * rand(0.8, 1.2),
+                    qrs: -Math.abs(mods['I'].qrs + mods['II'].qrs) / 2 * rand(0.8, 1.2),
+                    t: -Math.abs(mods['I'].t + mods['II'].t) / 2 * rand(0.8, 1.2),
+                    st: 1
+                };
+
+                // --- PASSO 3: DETERMINAR EIXO (modifica 'mods') ---
+                let axisDescription, axisJustification, axisClassification;
+                const axisRoll = Math.random();
+                if (axisRoll < 0.15) { 
+                    axisClassification = 'direita';
+                    mods['I'].qrs *= -0.5; 
+                    mods['aVF'].qrs = Math.abs(mods['aVF'].qrs) * 1.2; 
+                    axisDescription = "<strong>Desvio de Eixo à Direita</strong> (entre +90° e +180°)";
+                    axisJustification = `<li>QRS em DI é predominantemente <strong>negativo</strong>.</li>
+                                         <li>QRS em aVF é predominantemente <strong>positivo</strong>.</li>`;
+                } else if (axisRoll < 0.30) {
+                    axisClassification = 'esquerda';
+                    mods['I'].qrs = Math.abs(mods['I'].qrs) * 1.2;
+                    mods['aVF'].qrs *= -0.5;
+                    axisDescription = "<strong>Desvio de Eixo à Esquerda</strong> (entre -30° e -90°)";
+                    axisJustification = `<li>QRS em DI é predominantemente <strong>positivo</strong>.</li>
+                                         <li>QRS em aVF é predominantemente <strong>negativo</strong>.</li>`;
+                } else { 
+                    axisClassification = 'normal';
+                    mods['I'].qrs = Math.abs(mods['I'].qrs); 
+                    mods['aVF'].qrs = Math.abs(mods['aVF'].qrs);
+                    axisDescription = "<strong>Normal</strong> (entre -30° e +90°)";
+                    axisJustification = `<li>QRS em DI é predominantemente <strong>positivo</strong>.</li>
+                                         <li>QRS em aVF é predominantemente <strong>positivo</strong>.</li>`;
+                }
+                
+                // Aplicar modificação de ritmo NÃO SINUSAL (modifica 'mods' para P)
+                if (diagnosis.rhythm === 'nao_sinusal') {
+                    // Inverte P em DII e aVF
+                    mods['II'].p *= -0.5;
+                    mods['aVF'].p *= -0.5;
+                    mods['I'].p = 0;
+                    mods['aVR'].p *= -1; 
+                }
+
+                // --- PREPARA TEXTOS DE ANÁLISE DETALHADA ---
+                if (diagnosis.rhythm === 'normal_sinusal') {
+                    pWaveDesc = `
+                        <ul class='list-disc list-inside'>
+                            <li><strong>Repres.:</strong> Despolarização dos átrios.</li>
+                            <li><strong>Duração:</strong> ${beatDurations.pDur_s.toFixed(2)}s (Normal: 0,08-0,11s).</li>
+                            <li><strong>Morfologia:</strong> Arredondada, positiva em DI, DII, aVF e negativa em aVR.</li>
+                        </ul>`;
+                    prDesc = `
+                        <ul class='list-disc list-inside'>
+                            <li><strong>Repres.:</strong> Condução do estímulo dos átrios aos ventrículos (inclui retardo no Nó AV).</li>
+                            <li><strong>Duração:</strong> ${prInterval_s.toFixed(2)}s (Normal: 0,12-0,20s).</li>
+                        </ul>`;
+                } else if (diagnosis.rhythm === 'nao_sinusal') {
+                    pWaveDesc = `
+                        <ul class='list-disc list-inside'>
+                            <li><strong>Repres.:</strong> Despolarização atrial retrógrada (ou ausente).</li>
+                            <li><strong>Morfologia:</strong> Ausente ou invertida nas derivações inferiores.</li>
+                        </ul>`;
+                    prDesc = `
+                        <ul class='list-disc list-inside'>
+                            <li><strong>Repres.:</strong> Condução AV.</li>
+                            <li><strong>Duração:</strong> Não aplicável ou curto (se P retrógrada for visível).</li>
+                        </ul>`;
+                } else { // Irregular (FA)
+                     pWaveDesc = `
+                        <ul class='list-disc list-inside'>
+                            <li><strong>Repres.:</strong> Ativação atrial caótica.</li>
+                            <li><strong>Morfologia:</strong> Ausente, substituída por ondas 'f' (fibrilatórias).</li>
+                        </ul>`;
+                    prDesc = `
+                        <ul class='list-disc list-inside'>
+                            <li><strong>Duração:</strong> Não aplicável (ausência de onda P consistente).</li>
+                        </ul>`;
+                }
+
+                const qrsAnalysisText = `
+                    <ul class='list-disc list-inside'>
+                        <li><strong>Repres.:</strong> Despolarização dos ventrículos.</li>
+                        <li><strong>Duração:</strong> ${beatDurations.qrsDur_s.toFixed(2)}s (Normal: 0,05-0,11s).</li>
+                        <li><strong>Morfologia:</strong> Estreito e pontiagudo.</li>
+                    </ul>`;
+                
+                const tAnalysisText = `
+                    <ul class='list-disc list-inside'>
+                        <li><strong>Repres.:</strong> Repolarização dos ventrículos.</li>
+                        <li><strong>Morfologia:</strong> Arredondada, assimétrica, geralmente positiva e seguindo o QRS.</li>
+                    </ul>`;
+
+                const stAnalysisText = `
+                    <ul class='list-disc list-inside'>
+                        <li><strong>Repres.:</strong> Período em que os ventrículos estão totalmente despolarizados.</li>
+                        <li><strong>Morfologia:</strong> Isoelétrico (nivelado com a linha de base).</li>
+                    </ul>`;
+                
+                // Cálculo de Bazett
+                const qtc = qtInterval_s / Math.sqrt(rrInterval_s);
+                let qtcNormalText;
+                if (qtc < 0.45) { // Simplificado (considerando < 0.45/0.46)
+                     qtcNormalText = `<strong>${qtc.toFixed(2)}s</strong> (Normal < 0,45s/0,46s).`;
+                } else {
+                    qtcNormalText = `<strong class='text-red-600'>${qtc.toFixed(2)}s</strong> (Alargado! Normal < 0,45s/0,46s).`;
+                }
+
+                const qtAnalysisText = `
+                    <ul class='list-disc list-inside'>
+                        <li><strong>Repres.:</strong> Sístole elétrica ventricular (despolarização e repolarização).</li>
+                        <li><strong>Duração (QTc):</strong> ${qtcNormalText}</li>
+                    </ul>`;
+
+
+                // --- ARMAZENAR DADOS PARA O QUIZ ---
+                currentEcgData = {
+                    heartRate: Math.round(heartRate),
+                    fcClassification: fcClassification, // 'bradicardia', 'taquicardia', 'normal'
+                    rrSquares: rrSquares,
+                    rrInterval_s: rrInterval_s.toFixed(2),
+                    qtMedido_s: qtInterval_s.toFixed(2),
+                    qtc_s: qtc.toFixed(2),
+                    isSinusal: isSinusal,
+                    isRegular: !isIrregular,
+                    axis: axisClassification, // 'direita', 'esquerda', 'normal'
+                    
+                    // Armazena o texto da análise para feedback
+                    analysis: {
+                        fc: `<p>A frequência cardíaca calculada é de <strong>${Math.round(heartRate)} bpm</strong>. Isso se classifica como <strong>${fcClassificationText}</strong>.</p>`,
+                        ritmo: `<p>${rhythmDescription}</p><p>${rhythmJustification}</p>`,
+                        eixo: `<p>Avaliando as derivações DI e aVF:</p><ul class="list-disc list-inside ml-4">${axisJustification}</ul><p>Com base nisso, o eixo elétrico apresenta: ${axisDescription}</p>`,
+                        ondas: {
+                            p: pWaveDesc,
+                            qrs: qrsAnalysisText,
+                            t: tAnalysisText
+                        },
+                        intervalos: {
+                            pr: prDesc,
+                            st: stAnalysisText,
+                            qt: qtAnalysisText
+                        }
+                    }
+                };
+
+                // --- Desenhar os traçados ---
+                leads.forEach(lead => {
+                    const canvas = document.getElementById(lead.id);
+                    if (!canvas) {
+                        console.error(`Canvas com id ${lead.id} não encontrado!`);
+                        return;
+                    }
+                    const modifier = mods[lead.label];
+                    const waveform = generateFullWaveform(lead.duration, heartRate, modifier, isIrregular, hideP);
+                    drawECG(canvas, waveform);
+                });
+
+                // --- Iniciar o Quiz ---
+                startQuiz();
+            }
+
+            // --- FUNÇÕES DO QUIZ ---
+
+            function startQuiz() {
+                currentQuizStep = 1;
+                renderStep(currentQuizStep);
+            }
+
+            function renderStep(step) {
+                let html = '';
+                
+                switch(step) {
+                    case 1: // Frequência Cardíaca
+                        html = `
+                            <div class="quiz-step" data-step="1">
+                                <h3 class="quiz-question">1. Calcule a frequência cardíaca:</h3>
+                                <div id="quiz-options-1" class="flex flex-col sm:flex-row gap-2">
+                                    <button class="quiz-option-btn w-full" data-value="bradicardia">Bradicardia (&lt; 50 bpm)</button>
+                                    <button class="quiz-option-btn w-full" data-value="normal">Normocardia (50-100 bpm)</button>
+                                    <button class="quiz-option-btn w-full" data-value="taquicardia">Taquicardia (&gt; 100 bpm)</button>
+                                </div>
+                                <button id="hint-btn-1" class="hint-btn mt-4">Mostrar Dica</button>
+                                <div id="hint-panel-1" class="hidden feedback-panel feedback-hint"></div>
+                                <div id="feedback-panel-1" class="hidden"></div>
+                                <div id="next-step-panel" class="hidden text-right mt-4">
+                                    <button class="next-step-btn" data-next-step="2">Próxima Questão &rarr;</button>
+                                </div>
+                            </div>
+                        `;
+                        break;
+                    
+                    case 2: // Ritmo
+                        ritmoQuestoesRespondidas = { sinusal: false, regular: false }; // Reset for this step
+                        html = `
+                            <div class="quiz-step" data-step="2">
+                                <fieldset id="ritmo-q1" class="mb-4">
+                                    <legend class="quiz-question">2a. O ritmo é sinusal?</legend>
+                                    <div class="flex gap-2">
+                                        <button class="quiz-option-btn w-1/2" data-question="sinusal" data-value="true">Sim</button>
+                                        <button class="quiz-option-btn w-1/2" data-question="sinusal" data-value="false">Não</button>
+                                    </div>
+                                </fieldset>
+                                <fieldset id="ritmo-q2" class="mb-4">
+                                    <legend class="quiz-question">2b. O ritmo é regular?</legend>
+                                    <div class="flex gap-2">
+                                        <button class="quiz-option-btn w-1/2" data-question="regular" data-value="true">Sim</button>
+                                        <button class="quiz-option-btn w-1/2" data-question="regular" data-value="false">Não</button>
+                                    </div>
+                                </fieldset>
+                                <div id="feedback-panel-2" class="hidden feedback-panel analysis-reveal"></div>
+                                <div id="next-step-panel" class="hidden text-right mt-4">
+                                    <button class="next-step-btn" data-next-step="3">Próxima Questão &rarr;</button>
+                                </div>
+                            </div>
+                        `;
+                        break;
+
+                    case 3: // Eixo
+                        html = `
+                            <div class="quiz-step" data-step="3">
+                                <h3 class="quiz-question">3. Qual o eixo elétrico?</h3>
+                                <div id="quiz-options-3" class="flex flex-col sm:flex-row gap-2">
+                                    <button class="quiz-option-btn w-full" data-value="esquerda">Desvio à Esquerda</button>
+                                    <button class="quiz-option-btn w-full" data-value="normal">Eixo Normal</button>
+                                    <button class="quiz-option-btn w-full" data-value="direita">Desvio à Direita</button>
+                                </div>
+                                <div id="feedback-panel-3" class="hidden"></div>
+                                <div id="next-step-panel" class="hidden text-right mt-4">
+                                    <button class="next-step-btn" data-next-step="4">Próxima Questão &rarr;</button>
+                                </div>
+                            </div>
+                        `;
+                        break;
+
+                    case 4: // Ondas
+                        revealedAnswerCounter = 0; // Reset counter
+                        html = `
+                            <div class="quiz-step" data-step="4">
+                                <h3 class="quiz-question">4. Caracterize as seguintes ondas:</h3>
+                                ${createRevealBlock("onda-p", "Onda P", currentEcgData.analysis.ondas.p)}
+                                ${createRevealBlock("onda-qrs", "Complexo QRS", currentEcgData.analysis.ondas.qrs)}
+                                ${createRevealBlock("onda-t", "Onda T", currentEcgData.analysis.ondas.t)}
+                                <div id="next-step-panel" class="hidden text-right mt-4">
+                                    <button class="next-step-btn" data-next-step="5">Próxima Questão &rarr;</button>
+                                </div>
+                            </div>
+                        `;
+                        break;
+
+                    case 5: // Intervalos
+                        revealedAnswerCounter = 0; // Reset counter
+                        html = `
+                            <div class="quiz-step" data-step="5">
+                                <h3 class="quiz-question">5. Caracterize os seguintes segmentos e intervalos:</h3>
+                                ${createRevealBlock("int-pr", "Intervalo PR", currentEcgData.analysis.intervalos.pr)}
+                                ${createRevealBlock("seg-st", "Segmento ST", currentEcgData.analysis.intervalos.st)}
+                                ${createRevealBlock("int-qt", "Intervalo QT", currentEcgData.analysis.intervalos.qt, true)}
+                                <div id="next-step-panel" class="hidden text-right mt-4">
+                                    <button class="next-step-btn" data-next-step="6">Ver Análise Completa</button>
+                                </div>
+                            </div>
+                        `;
+                        break;
+
+                    case 6: // Análise Final
+                        html = `
+                            <div class="quiz-step" data-step="6">
+                                <h2 class="text-xl sm:text-2xl font-bold text-gray-800 mb-4">Análise Sistemática Completa</h2>
+                                <div class="prose prose-sm max-w-none text-gray-700 space-y-4">
+                                    <div><h3 class="font-bold text-lg mb-2">1. Frequência Cardíaca (FC)</h3>${currentEcgData.analysis.fc}</div>
+                                    <div><h3 class="font-bold text-lg mt-4 mb-2">2. Ritmo e Justificativa</h3>${currentEcgData.analysis.ritmo}</div>
+                                    <div><h3 class="font-bold text-lg mt-4 mb-2">3. Eixo Elétrico</h3>${currentEcgData.analysis.eixo}</div>
+                                    <div><h3 class="font-bold text-lg mt-4 mb-2">4. Análise das Ondas</h3>
+                                        <ul class="list-disc list-inside ml-4">
+                                            <li><strong>Onda P:</strong> ${currentEcgData.analysis.ondas.p}</li>
+                                            <li><strong>Complexo QRS:</strong> ${currentEcgData.analysis.ondas.qrs}</li>
+                                            <li><strong>Onda T:</strong> ${currentEcgData.analysis.ondas.t}</li>
+                                        </ul>
+                                    </div>
+                                    <div><h3 class="font-bold text-lg mt-4 mb-2">5. Intervalos e Segmentos</h3>
+                                        <ul class="list-disc list-inside ml-4">
+                                            <li><strong>Intervalo PR:</strong> ${currentEcgData.analysis.intervalos.pr}</li>
+                                            <li><strong>Segmento ST:</strong> ${currentEcgData.analysis.intervalos.st}</li>
+                                            <li><strong>Intervalo QT:</strong> ${currentEcgData.analysis.intervalos.qt}</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                                <div class="text-center mt-8">
+                                    <p class="text-gray-600 mb-4">Clique no botão no topo da página para gerar um novo ECG e reiniciar o quiz.</p>
+                                </div>
+                            </div>
+                        `;
+                        break;
+                }
+                quizContainer.innerHTML = html;
+            }
+
+            // Helper para criar blocos dos Passos 4 e 5
+            function createRevealBlock(id, title, answerText, isQt = false) {
+                let bazettCalculator = '';
+                if (isQt) {
+                    bazettCalculator = `
+                        <div class="bazett-calculator p-3 border border-blue-200 rounded-md bg-blue-50/50 mt-4 mb-4 space-y-3">
+                            <h5 class="font-semibold text-gray-700">Calculadora de Bazett: QTc = QTmedido / &radic;RR</h5>
+                            <div class="flex flex-col sm:flex-row gap-3">
+                                <div class="flex-1">
+                                    <label for="qt-medido" class="text-sm font-medium">QT medido (s):</label>
+                                    <input type="number" id="qt-medido" class="w-full p-1 border rounded-md" placeholder="ex: 0.40">
+                                </div>
+                                <div class="flex-1">
+                                    <label for="rr-interval" class="text-sm font-medium">Intervalo R-R (s):</label>
+                                    <input type="number" id="rr-interval" class="w-full p-1 border rounded-md" placeholder="ex: 0.80">
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-4">
+                                <button class="bazett-calc-btn">Calcular QTc</button>
+                                <button class="bazett-hint-btn">Dica</button>
+                            </div>
+                            <div id="bazett-feedback" class="hidden feedback-panel"></div>
+                            <div id="bazett-hint" class="hidden feedback-panel feedback-hint"></div>
+                        </div>
+                    `;
+                }
+
+                return `
+                    <div class="reveal-block mb-4 p-4 border rounded-lg bg-gray-50">
+                        <label for="text-${id}" class="font-semibold text-gray-700">${title}:</label>
+                        <textarea id="text-${id}" class="w-full h-20 p-2 border rounded-md mt-2" placeholder="Descreva o que você vê..."></textarea>
+                        
+                        ${bazettCalculator}
+                        
+                        <button class="show-answer-btn mt-2" data-target="${id}">Mostrar Resposta</button>
+                        <div id="answer-${id}" class="hidden feedback-panel feedback-hint mt-2">
+                            <strong>Resposta:</strong> ${answerText}
+                        </div>
+                    </div>
+                `;
+            }
+
+
+            // --- Event Handlers ---
+            
+            // Botão principal
+            btn.addEventListener('click', generateAllECGs);
+
+            // Listener delegado para todo o container do quiz
+            quizContainer.addEventListener('click', function(e) {
+                
+                // --- Botão Próxima Etapa ---
+                if (e.target.classList.contains('next-step-btn')) {
+                    currentQuizStep = parseInt(e.target.dataset.nextStep, 10);
+                    renderStep(currentQuizStep);
+                }
+
+                // --- Botão de Dica (Passo 1) ---
+                if (e.target.id === 'hint-btn-1') {
+                    const hintPanel = document.getElementById('hint-panel-1');
+                    hintPanel.innerHTML = `<strong>Dica:</strong> A distância entre dois complexos QRS é de aproximadamente <strong>${currentEcgData.rrSquares} quadrados pequenos</strong> (1mm). (1500 / ${currentEcgData.rrSquares} ≈ ${Math.round(1500 / currentEcgData.rrSquares)} bpm)`;
+                    hintPanel.classList.remove('hidden');
+                    e.target.classList.add('hidden'); // Oculta a dica após clicar
+                }
+
+                // --- Botões de Opção (Passos 1 e 3) ---
+                if (e.target.classList.contains('quiz-option-btn') && (currentQuizStep === 1 || currentQuizStep === 3)) {
+                    const step = currentQuizStep;
+                    const selectedValue = e.target.dataset.value;
+                    let correctAnswer, analysisText, feedbackPanel;
+
+                    if (step === 1) {
+                        correctAnswer = currentEcgData.fcClassification;
+                        analysisText = currentEcgData.analysis.fc;
+                        feedbackPanel = document.getElementById('feedback-panel-1');
+                    } else { // Step 3
+                        correctAnswer = currentEcgData.axis;
+                        analysisText = currentEcgData.analysis.eixo;
+                        feedbackPanel = document.getElementById('feedback-panel-3');
+                    }
+
+                    // Desabilitar todos os botões da etapa
+                    const buttons = e.target.closest('.quiz-step').querySelectorAll('.quiz-option-btn');
+                    buttons.forEach(btn => btn.disabled = true);
+
+                    // Aplicar feedback
+                    if (selectedValue === correctAnswer) {
+                        e.target.classList.add('correct');
+                        feedbackPanel.innerHTML = `<strong>Correto!</strong> ${analysisText}`;
+                        feedbackPanel.className = 'feedback-panel feedback-correct';
+                    } else {
+                        e.target.classList.add('incorrect');
+                        // Encontrar e destacar o correto
+                        buttons.forEach(btn => {
+                            if (btn.dataset.value === correctAnswer) {
+                                btn.classList.add('correct');
+                            }
+                        });
+                        feedbackPanel.innerHTML = `<strong>Incorreto.</strong> A resposta correta é <strong>${currentEcgData.fcClassification}</strong>. <br><br> ${analysisText}`;
+                        feedbackPanel.className = 'feedback-panel feedback-incorrect';
+                    }
+                    
+                    document.getElementById('next-step-panel').classList.remove('hidden');
+                }
+
+                // --- Botões de Opção (Passo 2) ---
+                if (e.target.classList.contains('quiz-option-btn') && currentQuizStep === 2) {
+                    const question = e.target.dataset.question; // 'sinusal' or 'regular'
+                    const selectedValue = e.target.dataset.value === 'true'; // bool
+                    let correctAnswer;
+
+                    if (question === 'sinusal') {
+                        correctAnswer = currentEcgData.isSinusal;
+                        ritmoQuestoesRespondidas.sinusal = true;
+                        e.target.closest('fieldset').querySelectorAll('button').forEach(btn => btn.disabled = true);
+                    } else { // 'regular'
+                        correctAnswer = currentEcgData.isRegular;
+                        ritmoQuestoesRespondidas.regular = true;
+                        e.target.closest('fieldset').querySelectorAll('button').forEach(btn => btn.disabled = true);
+                    }
+                    
+                    // Feedback visual para o botão clicado
+                    if (selectedValue === correctAnswer) {
+                        e.target.classList.add('correct');
+                    } else {
+                        e.target.classList.add('incorrect');
+                        // Destaca o correto
+                        e.target.parentElement.querySelectorAll('button').forEach(btn => {
+                            if ((btn.dataset.value === 'true') === correctAnswer) {
+                                btn.classList.add('correct');
+                            }
+                        });
+                    }
+                    
+                    // Checa se ambas as perguntas do passo 2 foram respondidas
+                    if (ritmoQuestoesRespondidas.sinusal && ritmoQuestoesRespondidas.regular) {
+                        const feedbackPanel = document.getElementById('feedback-panel-2');
+                        feedbackPanel.innerHTML = currentEcgData.analysis.ritmo;
+                        feedbackPanel.classList.remove('hidden');
+                        document.getElementById('next-step-panel').classList.remove('hidden');
+                    }
+                }
+
+                // --- Botões "Mostrar Resposta" (Passos 4 e 5) ---
+                if (e.target.classList.contains('show-answer-btn')) {
+                    const targetId = e.target.dataset.target;
+                    document.getElementById(`answer-${targetId}`).classList.remove('hidden');
+                    e.target.disabled = true;
+                    e.target.classList.add('hidden'); // Oculta o botão "Mostrar Resposta"
+
+                    revealedAnswerCounter++;
+                    
+                    // Se todas as 3 respostas da etapa foram reveladas
+                    if (revealedAnswerCounter === 3) {
+                        document.getElementById('next-step-panel').classList.remove('hidden');
+                    }
+                }
+
+                // --- NOVOS Listeners da Calculadora Bazett (Passo 5) ---
+                if (e.target.classList.contains('bazett-hint-btn')) {
+                    const hintPanel = document.getElementById('bazett-hint');
+                    hintPanel.innerHTML = `<strong>Dica:</strong><br>
+                                            QT medido &approx; <strong>${currentEcgData.qtMedido_s} s</strong><br>
+                                            Intervalo R-R &approx; <strong>${currentEcgData.rrInterval_s} s</strong>`;
+                    hintPanel.classList.remove('hidden');
+                    e.target.classList.add('hidden'); // Oculta o botão de dica
+                }
+
+                if (e.target.classList.contains('bazett-calc-btn')) {
+                    const qtInput = document.getElementById('qt-medido').value;
+                    const rrInput = document.getElementById('rr-interval').value;
+                    const feedbackPanel = document.getElementById('bazett-feedback');
+
+                    if (!qtInput || !rrInput) {
+                        feedbackPanel.innerHTML = "Por favor, insira ambos os valores.";
+                        feedbackPanel.className = "feedback-panel feedback-incorrect";
+                        feedbackPanel.classList.remove('hidden');
+                        return;
+                    }
+                    
+                    const userQTc = parseFloat(qtInput) / Math.sqrt(parseFloat(rrInput));
+                    const correctQTc = parseFloat(currentEcgData.qtc_s);
+                    
+                    // Verifica se o cálculo do usuário está próximo o suficiente
+                    if (Math.abs(userQTc - correctQTc) < 0.02) { // Tolerância de 0.02s
+                        feedbackPanel.innerHTML = `<strong>Correto!</strong> Seu cálculo: <strong>${userQTc.toFixed(2)}s</strong>. <br>O QTc deste ECG é ${currentEcgData.analysis.intervalos.qt.match(/<strong>.*<\/strong>/)[0]}.`;
+                        feedbackPanel.className = "feedback-panel feedback-correct";
+                    } else {
+                        feedbackPanel.innerHTML = `<strong>Cálculo incorreto.</strong> Seu resultado: ${userQTc.toFixed(2)}s. <br>Resposta correta: ${correctQTc.toFixed(2)}s. <br>(QT: ${currentEcgData.qtMedido_s}s / &radic;${currentEcgData.rrInterval_s}s)`;
+                        feedbackPanel.className = "feedback-panel feedback-incorrect";
+                    }
+                    feedbackPanel.classList.remove('hidden');
+                }
+            });
+
+            // --- Geração Inicial ---
+            generateAllECGs();
+
+        });
+    </script>
+</body>
+</html>
